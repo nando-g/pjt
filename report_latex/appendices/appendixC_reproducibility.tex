@@ -1,0 +1,66 @@
+\chapter{CONTAINERIZED REPRODUCIBILITY AND EXECUTION GUIDE}
+\label{app:reproducibility}
+
+This appendix provides the complete instructions for reproducing all empirical measurements, statistical tables, and comparative figures presented in this report.
+
+\section{EVALUATION CONTAINER ENVIRONMENT}
+Because physical network impairment (\texttt{tc netem}), packet sniffing (\texttt{tshark}), and NS-3 3.41 require a specialized Linux kernel configuration, all evaluations are containerized under Docker.
+
+\subsection{1. Building the Docker Container}
+From the root directory of the repository, execute:
+\begin{lstlisting}[language=bash]
+docker build -t hpqv-eval ./eval
+\end{lstlisting}
+The build script compiles \texttt{liboqs} (configured specifically for ML-KEM-768 and ML-DSA-65), builds \texttt{libopus}, compiles NS-3 3.41 from source, and provisions Python 3.11 with all project dependencies via \texttt{uv}.
+
+\subsection{2. Executing Automated Test Suites}
+To run the full 53-case automated test harness:
+\begin{lstlisting}[language=bash]
+docker run --rm --cap-add=NET_ADMIN -v "$PWD":/work hpqv-eval \
+  bash -c "cd /work && uv sync -q && uv run pytest -q"
+\end{lstlisting}
+All 53 unit, integration, and security tests pass cleanly within the Linux container environment.
+
+\section{REPRODUCING EMPIRICAL BENCHMARKS}
+
+\subsection{Track 2: Physical Network Evaluation}
+To execute the physical loss and latency sweeps under Linux NetEm:
+\begin{lstlisting}[language=bash]
+docker run --rm --cap-add=NET_ADMIN -v "$PWD":/work hpqv-eval \
+  bash -c "cd /work && uv sync -q && uv run python scripts/run_eval.py"
+\end{lstlisting}
+This script runs five independent iterations per condition, calculates medians, logs physical IP fragment counts via \texttt{tshark}, and emits \texttt{results/eval.csv} and \texttt{results/eval\_latency.csv}.
+
+\subsection{Handshake Survival Under Loss}
+To reproduce the 100-attempt per condition handshake survival study:
+\begin{lstlisting}[language=bash]
+docker run --rm --cap-add=NET_ADMIN -v "$PWD":/work hpqv-eval \
+  bash -c "cd /work && uv sync -q && uv run python scripts/run_handshake_survival.py"
+\end{lstlisting}
+Outputs are saved to \texttt{results/handshake\_survival.csv} and plotted as \texttt{results/handshake\_survival.png}.
+
+\subsection{Opus In-Band FEC Reconstruction Benchmark}
+To execute the segmental SNR audio recovery experiment:
+\begin{lstlisting}[language=bash]
+docker run --rm --cap-add=NET_ADMIN -v "$PWD":/work hpqv-eval \
+  bash -c "cd /work && uv sync -q && uv run python scripts/run_fec_recovery.py"
+\end{lstlisting}
+Outputs are saved to \texttt{results/fec\_recovery.csv} and plotted as \texttt{results/fec\_recovery.png}.
+
+\subsection{Track 3: NS-3 Simulation Sweeps}
+To compile and execute the discrete-event simulation model:
+\begin{lstlisting}[language=bash]
+docker run --rm --cap-add=NET_ADMIN -v "$PWD":/work hpqv-eval \
+  bash -c "cd /work && uv sync -q && uv run python scripts/run_ns3.py"
+\end{lstlisting}
+Outputs are written to \texttt{results/ns3\_eval.csv} and \texttt{results/ns3\_latency.csv}.
+
+\section{AUTOMATED DOCUMENT SYNCHRONIZATION}
+To ensure that numbers quoted in thesis prose never drift out of synchronization with committed experimental CSV files, the repository includes an automated table renderer. To regenerate markdown and report tables or verify synchronization:
+\begin{lstlisting}[language=bash]
+# Re-render all generated tables from results/*.csv
+python scripts/render_tables.py
+
+# Verify synchronization (exits with code 1 if documents are stale)
+python scripts/render_tables.py --check
+\end{lstlisting}

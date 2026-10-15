@@ -1,0 +1,123 @@
+\documentclass[12pt, a4paper]{report}
+
+% Include custom styling package strictly conforming to BCSE497J guidelines
+\usepackage{vit_template}
+\usepackage{natbib}
+\bibliographystyle{apalike}
+
+\begin{document}
+
+% -------------------------------------------------------------------------
+% PRELIMINARY PAGES (Unnumbered / Roman Numerals)
+% -------------------------------------------------------------------------
+% 1. Cover Page (Unnumbered)
+\input{frontmatter/cover}
+
+% 2. Title Page (Unnumbered)
+\input{frontmatter/title}
+
+% 3. Declaration by Candidate (Unnumbered)
+\input{frontmatter/declaration}
+
+% 4. Certificate by Guide and Examiners (Unnumbered)
+\input{frontmatter/certificate}
+
+% Frontmatter Page Numbering: Lowercase Roman numerals (i, ii, iii...)
+\pagenumbering{roman}
+\setcounter{page}{1}
+
+% 5. Abstract (Page i)
+\input{frontmatter/abstract}
+\clearpage
+
+% 6. Acknowledgement (Page ii)
+\input{frontmatter/acknowledgement}
+\clearpage
+
+% 7. Table of Contents
+\phantomsection
+\addcontentsline{toc}{chapter}{TABLE OF CONTENTS}
+\tableofcontents
+\clearpage
+
+% 8. List of Tables
+\phantomsection
+\addcontentsline{toc}{chapter}{LIST OF TABLES}
+\listoftables
+\clearpage
+
+% 9. List of Figures
+\phantomsection
+\addcontentsline{toc}{chapter}{LIST OF FIGURES}
+\listoffigures
+\clearpage
+
+% 10. List of Acronyms & Abbreviations
+\phantomsection
+\addcontentsline{toc}{chapter}{LIST OF ACRONYMS}
+\input{frontmatter/acronyms}
+\clearpage
+
+% -------------------------------------------------------------------------
+% MAIN THESIS CHAPTERS (Arabic Numerals starting from 1)
+% -------------------------------------------------------------------------
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+% Chapter 1: Introduction
+\input{chapters/chapter1_intro}
+
+% Chapter 2: Literature Survey & Background
+\input{chapters/chapter2_literature}
+
+% Chapter 3: System Design and Protocol Architecture
+\input{chapters/chapter3_architecture}
+
+% Chapter 4: Implementation Details & Software Architecture
+\input{chapters/chapter4_implementation}
+
+% Chapter 5: Experimental Methodology and Setup
+\input{chapters/chapter5_methodology}
+
+% Chapter 6: Results, Performance Analysis, and Discussion
+\input{chapters/chapter6_results}
+
+% Chapter 7: Conclusion and Future Work
+\input{chapters/chapter7_conclusion}
+
+% -------------------------------------------------------------------------
+% REFERENCES (APA Format)
+% -------------------------------------------------------------------------
+\clearpage
+\phantomsection
+\addcontentsline{toc}{chapter}{REFERENCES}
+\renewcommand{\bibname}{\fontsize{16}{20}\selectfont\textbf{REFERENCES}}
+\bibliography{references}
+
+% -------------------------------------------------------------------------
+% APPENDICES
+% -------------------------------------------------------------------------
+\clearpage
+\appendix
+\titleformat{\chapter}[display]
+  {\normalfont\fontsize{16}{20}\bfseries\centering}
+  {\MakeUppercase{APPENDIX \thechapter}}
+  {10pt}
+  {\fontsize{16}{20}\bfseries\MakeUppercase}
+
+% Appendix A: Wire Format Specification
+\input{appendices/appendixA_wireformat}
+
+% Appendix B: Mathematical Formulations & Derivations
+\input{appendices/appendixB_math}
+
+% Appendix C: Containerized Reproducibility Guide
+\input{appendices/appendixC_reproducibility}
+
+% Appendix D: Core Prototype Source Code Listings
+\input{appendices/appendixD_code}
+
+% Appendix E: Automated Test Suite Inventory
+\input{appendices/appendixE_tests}
+
+\end{document}

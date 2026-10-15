@@ -1,0 +1,168 @@
+\chapter{LITERATURE SURVEY AND BACKGROUND}
+
+\section{INTRODUCTION}
+The transition to post-quantum secure communications requires reassessing foundational assumptions across network protocol design. While modern cryptographic literature has extensively examined the computational throughput of post-quantum algorithms on server-grade and embedded microprocessors, the network transport layer has received comparatively less scrutiny. In particular, real-time interactive voice applications operate under fundamentally different constraints than bulk data transfers or episodic web browsing. 
+
+This chapter presents a comprehensive literature survey examining four interconnected domains: the theoretical foundations of lattice-based post-quantum cryptography; the state-of-the-art in post-quantum transport layer protocols; the architectural mechanics of real-time voice transport; and the network-layer pathologies associated with IP fragmentation and middlebox interference. The chapter concludes with a systematic gap analysis delineating why existing solutions fail to provide reliable, fragmentation-free post-quantum voice transport.
+
+\section{THEORETICAL FOUNDATIONS OF POST-QUANTUM CRYPTOGRAPHY}
+
+\subsection{Quantum Computing and the Vulnerability of Classical Cryptography}
+Classical public-key cryptography rests upon the presumed computational intractability of number-theoretic problems. The RSA cryptosystem relies on the factoring of large composite integers $N = p \cdot q$. The Diffie-Hellman key exchange, ElGamal encryption, and Elliptic Curve Cryptography (ECC) depend on the discrete logarithm problem: given a cyclic group $G$, a generator $g \in G$, and an element $y = g^x$, determine the integer exponent $x$.
+
+In 1994, Peter Shor established that both the integer factorization problem and the discrete logarithm problem belong to the complexity class $\text{BQP}$ (Bounded-error Quantum Polynomial time) \cite{shor1994algorithms}. Shor's algorithm formulates discrete logarithms and integer factorization as instances of the hidden subgroup problem over abelian groups. By utilizing the Quantum Fourier Transform (QFT), a quantum computer evaluates the periodicity of the modular exponentiation function $f(a) = g^a \pmod N$ in quantum superposition across $2n$ qubits:
+\begin{equation}
+    |\psi\rangle = \frac{1}{\sqrt{2^m}} \sum_{a=0}^{2^m - 1} |a\rangle |g^a \pmod N\rangle
+\end{equation}
+Applying the inverse Quantum Fourier Transform to the state register yields constructive interference at rational approximations of the period $r = \text{ord}(g)$, allowing classical continued fractions to extract $r$ in polynomial time $\mathcal{O}((\log N)^2 \log \log N)$. 
+
+Because elliptic curve scalar multiplication is an abelian group operation, Shor's algorithm solves elliptic curve discrete logarithms in $\mathcal{O}(n^3)$ operations using only $\mathcal{O}(n)$ logical qubits. Consequently, standardized curves such as NIST P-256 and Curve25519 offer precisely zero asymptotic security against a cryptanalytically relevant quantum computer.
+
+\subsection{Lattice-Based Cryptography and Learning With Errors (LWE)}
+To secure communications against quantum cryptanalysis, cryptographers have turned to alternate mathematical structures. Among all evaluated post-quantum families—including code-based, isogeny-based, hash-based, and multivariate quadratic cryptography—lattice-based cryptography has emerged as the premier foundation due to its balanced efficiency, strong worst-case to average-case hardness reductions, and mathematical maturity.
+
+A lattice $\Lambda \subset \mathbb{R}^m$ is a discrete additive subgroup defined by the set of all integer linear combinations of $n$ linearly independent basis vectors $\mathbf{b}_1, \dots, \mathbf{b}_n \in \mathbb{R}^m$:
+\begin{equation}
+    \Lambda(\mathbf{B}) = \left\{ \sum_{i=1}^n x_i \mathbf{b}_i \;\middle|\; x_i \in \mathbb{Z} \right\}
+\end{equation}
+The security of lattice primitives reduces to the conjectured worst-case hardness of geometric lattice problems, such as the Shortest Vector Problem ($\text{SVP}_\gamma$) and the Closest Vector Problem ($\text{CVP}_\gamma$), for which no known classical or quantum algorithm achieves polynomial time for polynomial approximation factors $\gamma$.
+
+In 2005, Oded Regev introduced the Learning With Errors (LWE) problem \cite{shor1994algorithms}. For a prime modulus $q$, dimension $n$, and an error distribution $\chi$ over $\mathbb{Z}_q$, the search LWE problem asks an adversary to reconstruct a secret vector $\mathbf{s} \in \mathbb{Z}_q^n$ given a collection of noisy inner products:
+\begin{equation}
+    (\mathbf{a}_i, b_i = \langle \mathbf{a}_i, \mathbf{s} \rangle + e_i) \in \mathbb{Z}_q^n \times \mathbb{Z}_q
+\end{equation}
+where $\mathbf{a}_i \leftarrow \mathcal{U}(\mathbb{Z}_q^n)$ and $e_i \leftarrow \chi$. While standard LWE offers robust security, it incurs quadratic space overhead $\mathcal{O}(n^2)$ because matrix $\mathbf{A} \in \mathbb{Z}_q^{m \times n}$ must be transmitted explicitly.
+
+To overcome this bandwidth overhead, Ring-LWE and Module-LWE (M-LWE) define operations over polynomial quotient rings $R_q = \mathbb{Z}_q[X] / (X^n + 1)$, where $n$ is a power of two. In Module-LWE, secrets and errors are vectors of polynomials over $R_q^k$, striking an optimal trade-off between algebraic structure, security assurances, and compact representation.
+
+\subsection{NIST Post-Quantum Cryptography Standards}
+Following a multi-year global evaluation, NIST finalized the first standardized post-quantum algorithms in August 2024:
+
+\subsubsection{FIPS 203: Module-Lattice Key Encapsulation Mechanism (ML-KEM)}
+Derived from the CRYSTALS-Kyber submission, ML-KEM is parameterized by ring degree $n=256$, modulus $q=3329$, and module rank $k \in \{2, 3, 4\}$ \cite{nist_fips203}. For NIST Security Category 3 (equivalent to AES-192 security), ML-KEM-768 utilizes $k=3$ and error parameter $\eta_1 = \eta_2 = 2$.
+\begin{itemize}
+    \item \textbf{Key Generation:} Generates seed $d \in \{0,1\}^{256}$, derives matrix $\hat{\mathbf{A}} \in R_q^{k \times k}$ via SHAKE-128, samples secret error vectors $\mathbf{s}, \mathbf{e} \leftarrow \beta_\eta^k$, and computes public key $\mathbf{t} = \hat{\mathbf{A}}\mathbf{s} + \mathbf{e}$. The serialized public key occupies $12 \cdot k \cdot n / 8 + 32 = 1,184$ bytes.
+    \item \textbf{Encapsulation:} Given public key $\mathbf{t}$, the sender samples random message $m \in \{0,1\}^{256}$, samples randomness $\mathbf{r}, \mathbf{e}_1, e_2$, and computes ciphertext $\mathbf{u} = \hat{\mathbf{A}}^T \mathbf{r} + \mathbf{e}_1$ and $v = \mathbf{t}^T \mathbf{r} + e_2 + \lceil q/2 \rfloor m$. Ciphertext compression produces an output size of $10 \cdot k \cdot n / 8 + 4 \cdot n / 8 = 1,088$ bytes.
+    \item \textbf{Decapsulation:} Reconstructs shared key $K$ via the Fujisaki-Okamoto transform, providing IND-CCA2 security against active chosen-ciphertext attacks.
+\end{itemize}
+
+\subsubsection{FIPS 204: Module-Lattice Digital Signature Algorithm (ML-DSA)}
+Derived from CRYSTALS-Dilithium, ML-DSA is based on the Fiat-Shamir with Aborts framework over module lattices \cite{nist_fips204}. For Category 3 security, ML-DSA-65 employs matrix dimensions $(k, \ell) = (6, 5)$, modulus $q = 8380417$, and polynomial degree $n=256$.
+\begin{itemize}
+    \item \textbf{Signing Mechanism:} Computes commitments $\mathbf{w} = \mathbf{A}\mathbf{y}$, extracts high bits $\mathbf{w}_1$, hashes the message and $\mathbf{w}_1$ to derive challenge $c$, and computes response $\mathbf{z} = \mathbf{y} + c\mathbf{s}_1$. Rejection sampling ensures that the distribution of $(\mathbf{z}, c)$ is strictly independent of the secret key $(\mathbf{s}_1, \mathbf{s}_2)$.
+    \item \textbf{Key and Signature Sizes:} The serialized public key $\mathbf{t}_1$ requires 1,952 bytes, while the digital signature $(\tilde{c}, \mathbf{z}, \mathbf{h})$ occupies 3,309 bytes.
+\end{itemize}
+
+\section{STATE-OF-THE-ART IN TRANSPORT LAYER PQC PROTOCOLS}
+
+\subsection{Post-Quantum TLS 1.3}
+Transport Layer Security (TLS 1.3, RFC 8446) is the dominant security protocol for Internet data transfer \cite{rfc8446}. Research into post-quantum TLS has primarily focused on benchmarking hybrid and pure PQC key exchange. 
+
+Sosnowski et al. (2023) evaluated post-quantum TLS 1.3 handshakes across diverse network conditions \cite{sosnowski2023performance}. Their findings revealed that while ML-KEM-768 key encapsulation imposes minimal CPU overhead on modern x86\_64 processors ($\approx 0.1\text{ ms}$), the transmission of large PQC public keys in the \texttt{ClientHello} message frequently triggers TCP segmentation. On low-bandwidth or lossy connections, segment drops during connection establishment induce TCP retransmission timeouts, significantly increasing the Time to First Byte (TTFB).
+
+Crockett, Paquin, and Stebila (2019) prototyped post-quantum and hybrid algorithms within OpenSSL and BoringSSL \cite{crockett2019prototyping}. Their analysis demonstrated that post-quantum digital signatures (such as Dilithium and Falcon) introduce severe network penalties during the TLS certificate exchange: because standard X.509 certificate chains contain multiple signatures, transmitting a PQC certificate chain expands the handshake by 7 to 15 kilobytes, forcing the initial TCP congestion window ($\text{initcwnd} = 10$) into early congestion and multi-round-trip serialization delays.
+
+\subsection{Post-Quantum QUIC}
+QUIC (RFC 9000) is a UDP-based, stream-multiplexed transport protocol integrated with TLS 1.3 encryption (RFC 9001) \cite{rfc9000, rfc9001}. Because QUIC operates over UDP, it eliminates TCP head-of-line blocking across independent application streams. 
+
+Kempf et al. (2024) conducted an exhaustive empirical investigation titled ``A Quantum of QUIC: Dissecting Cryptography with Post-Quantum Insights'' \cite{kempf2024quantum}. They analyzed the behavior of QUIC implementations when executing post-quantum handshakes. A critical limitation emerged: standard QUIC enforces an anti-amplification limit (RFC 9000, Section 8.1). Before an endpoint's IP address is validated, a QUIC server must not transmit more than three times the volume of data received from the client ($3\times$ amplification limit). When large post-quantum public keys or certificates are transmitted, the server's handshake response frequently exceeds this threshold, forcing the server to pause transmission and wait for an extra round-trip validation from the client.
+
+Dong and Wang (2025) proposed EPQUIC, optimizing post-quantum QUIC handshakes by caching public keys and parallelizing polynomial arithmetic \cite{dong2025epquic}. However, EPQUIC focuses on client-server web workloads; it does not address real-time bidirectional audio streaming where connection establishment must immediately yield an uninhibited, low-jitter datagram channel.
+
+\subsection{TurboTLS and Transport Workarounds}
+In 2024, Aguilar-Melchor et al. introduced TurboTLS \cite{aguilar2024turbotls}. TurboTLS recognized that large post-quantum handshakes exacerbate latency. To accelerate connection establishment, TurboTLS initiates communication over UDP and TCP simultaneously: an opportunistic UDP handshake packet is transmitted alongside a parallel TCP SYN. If the UDP packet arrives without packet loss, the handshake completes in a single round trip; if packet loss or middlebox filtering occurs, the connection falls back transparently to the parallel TCP stream.
+
+While TurboTLS shares our concept of combining TCP and UDP, its architectural objective is fundamentally different from this thesis:
+\begin{itemize}
+    \item \textbf{TurboTLS Objective:} Optimizing connection establishment \textit{latency} for web requests by speculatively racing UDP against TCP. Once established, application data flows exclusively over TLS/TCP.
+    \item \textbf{HPQV Objective:} Preventing \textit{network-layer fragmentation} of oversized post-quantum handshakes while permanently preserving UDP datagram transport for real-time voice frames. In HPQV, TCP and UDP do not race; they execute distinct functional roles in parallel throughout the lifetime of the call.
+\end{itemize}
+
+\section{REAL-TIME VOICE TRANSPORT PROTOCOLS}
+
+\subsection{RTP, SRTP, and WebRTC Architectures}
+Real-Time Transport Protocol (RTP, RFC 3550) provides end-to-end network transport functions for streaming audio and video \cite{rfc3550}. RTP packets carry an unencrypted 12-byte header containing synchronization source (SSRC) identifiers, monotonic sequence numbers, and media timestamps to allow receivers to reconstruct playout timing and detect packet loss.
+
+Secure RTP (SRTP, RFC 3711) encrypts the RTP payload and authenticates the entire packet using symmetric cryptography \cite{rfc3711}. In standard WebRTC implementations, SRTP session keys are negotiated dynamically over UDP via Datagram Transport Layer Security (DTLS-SRTP, RFC 5764). 
+
+The reliance on DTLS over UDP creates a fatal failure mode when post-quantum primitives are introduced. DTLS implements its own user-space fragmentation and retransmission timer layer to transmit records exceeding the MTU. However, when an oversized DTLS record (e.g., 6,445 bytes of ML-KEM/ML-DSA material) is split across multiple UDP packets, each packet is subject to independent drop probabilities. Because DTLS uses coarse retransmission timers (typically initialized to 1.0 second), a dropped handshake fragment stalls call setup by seconds—causing users to hang up before the call establishes.
+
+\section{IP FRAGMENTATION MECHANISMS AND MIDDLEBOX PATHOLOGY}
+
+\subsection{Mechanics of IPv4 Fragmentation}
+The Internet Protocol was designed to interconnect heterogeneous networks with divergent Maximum Transmission Units (RFC 791). In IPv4, when a packet's length exceeds the MTU of an egress interface, the router or host kernel fragments the payload into multiple smaller IP datagrams, as governed by three header fields:
+\begin{enumerate}
+    \item \textbf{Identification (16 bits):} A unique integer assigned by the sender to correlate all fragments belonging to a single original datagram.
+    \item \textbf{Flags (3 bits):} Includes the Don't-Fragment (DF) bit (bit 1) and the More-Fragments (MF) bit (bit 2). If DF is asserted ($\text{DF}=1$) and packet length exceeds the MTU, the packet is discarded and an ICMP Fragmentation Needed message is returned. If $\text{DF}=0$, the packet is segmented, setting $\text{MF}=1$ for all fragments except the final fragment ($\text{MF}=0$).
+    \item \textbf{Fragment Offset (13 bits):} Measures the byte offset of the fragment payload relative to the original unfragmented datagram, expressed in units of 8-byte blocks.
+\end{enumerate}
+
+\subsection{Middlebox Vulnerabilities and Empirical Failure Modes}
+Extensive empirical networking studies confirm that IP fragmentation is highly fragile in modern production networks. In their landmark empirical analysis ``Beyond Folklore: Observations on Fragmented Traffic,'' Shannon, Moore, and Claffy (2002) measured wide-area traffic and demonstrated that fragmented IP packets suffer drastically higher drop rates than unfragmented packets \cite{shannon1984ipfrag}.
+
+This heightened failure rate stems from several systemic middlebox behaviors:
+\begin{enumerate}
+    \item \textbf{Stateless Filtering and Firewall Discard:} Transport layer headers (such as UDP source and destination ports) reside exclusively in the first fragment ($\text{Offset}=0$). Subsequent fragments ($\text{Offset} > 0$) contain only raw IP payload without transport headers. Network firewalls executing port-based filtering policies cannot inspect ports in trailing fragments. To prevent blind bypass attacks, firewalls frequently drop all non-zero offset fragments unconditionally.
+    \item \textbf{NAT Table Exhaustion:} Network Address Translation (NAT) gateways must rewrite IP headers and transport checksums. When fragments arrive out of order, the NAT device must buffer initial fragments until the offset-zero packet arrives to identify the port mapping. Under heavy traffic or denial-of-service conditions, NAT fragment reassembly tables exhaust their memory limits, discarding pending fragments.
+    \item \textbf{ECMP Load Balancing Inconsistencies:} Equal-Cost Multi-Path (ECMP) switches route traffic by hashing the 5-tuple (Source IP, Destination IP, Protocol, Source Port, Destination Port). Because non-zero fragments lack port numbers, ECMP routers hash only the IP addresses, frequently routing different fragments of the same datagram across divergent physical paths with unequal latencies, leading to fragment reassembly buffer timeouts at the receiver.
+\end{enumerate}
+
+\section{AUDIO CODING AND RESILIENCE MECHANISMS}
+
+\subsection{The Opus Audio Codec (RFC 6716)}
+The standardized Opus codec combines technologies from Skype's SILK codec (specialized for human voice via Linear Predictive Coding) and Xiph.Org's CELT codec (specialized for low-latency audio via the Modified Discrete Cosine Transform) \cite{rfc6716}. Operating at sampling rates from 8 kHz to 48 kHz, Opus produces compressed frames spanning durations from 2.5 ms to 60 ms. For interactive telecommunications, standard implementations utilize 20 ms frames (960 audio samples at 48 kHz).
+
+\subsection{Opus In-Band Forward Error Correction (LBRR)}
+To maintain voice intelligibility over unreliable channels without retransmission delays, Opus implements in-band Low Bitrate Redundancy (LBRR). When enabled, the encoder compresses the current 20 ms audio frame $N$ at high quality, while simultaneously generating a highly compressed, low-bitrate secondary representation of the preceding frame $N-1$, embedding both within packet $N$:
+\begin{equation}
+    \text{Packet}_N = \text{OpusData}(N) \parallel \text{LBRR}(N-1)
+\end{equation}
+When the receiver experiences packet loss (e.g., packet $N-1$ is dropped), the decoder does not immediately emit silence. Upon the arrival of packet $N$, the receiver executes a specialized decoder routine with the FEC flag asserted (\texttt{decode\_fec=True}), reconstructing frame $N-1$ from the embedded redundancy. If consecutive packets are lost, the decoder falls back to Packet Loss Concealment (PLC), extrapolating pitch periods from previous waveforms.
+
+\subsection{Speech Quality Assessment Models}
+Objective quantification of voice quality across degraded networks is formally defined by ITU-T Recommendation G.107, known as the \textbf{E-model} \cite{itut_g107}. The E-model calculates a scalar Transmission Rating Factor $R \in [0, 100]$:
+\begin{equation}
+    R = R_0 - I_s - I_d - I_{e,\text{eff}} + A
+\end{equation}
+where $R_0$ is the basic signal-to-noise ratio, $I_s$ represents simultaneous speech impairments, $I_d$ quantifies impairments caused by one-way mouth-to-ear delay, $I_{e,\text{eff}}$ captures effective equipment impairment due to codec compression and packet loss, and $A$ is an advantage factor.
+
+The rating factor $R$ maps non-linearly to the standard 5-point Mean Opinion Score (MOS):
+\begin{equation}
+    \text{MOS} = 
+    \begin{cases} 
+      1.0, & R \le 0 \\
+      1 + 0.035 R + R(R - 60)(100 - R) \cdot 7 \cdot 10^{-6}, & 0 < R < 100 \\
+      4.5, & R \ge 100 
+   \end{cases}
+\end{equation}
+A MOS score above 4.0 indicates toll-quality voice, 3.5 to 4.0 corresponds to acceptable communication, and scores below 3.0 denote severely impaired, unintelligible audio.
+
+\section{SUMMARY AND RESEARCH GAP IDENTIFICATION}
+Table \ref{tab:literature_comparison} synthesizes existing transport paradigms against the operational requirements of post-quantum real-time voice telecommunications.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Comparative Synthesis of Transport Paradigms for Post-Quantum Voice.}
+    \label{tab:literature_comparison}
+    \small
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}p{2.2cm} >{\raggedright\arraybackslash}p{2.2cm} >{\raggedright\arraybackslash}p{2.2cm} >{\raggedright\arraybackslash}X}
+        \toprule
+        \textbf{Architecture} & \textbf{Handshake Transport} & \textbf{Voice Transport} & \textbf{IP Frag. Behavior} & \textbf{Critical Limitation in Voice Deployment} \\
+        \midrule
+        \textbf{Classical DTLS-SRTP} & UDP (DTLS 1.2) & UDP (SRTP) & None (Small Keys) & Vulnerable to Shor's algorithm; zero quantum resistance. \\
+        \addlinespace
+        \textbf{Naive PQC-over-UDP} & UDP & UDP & Severe (8 Fragments) & Exponential connection failure ($(1-p)^8$); middlebox discard. \\
+        \addlinespace
+        \textbf{Pure PQC-over-TCP} & TCP (TLS 1.3) & TCP & None (TCP Stream) & Head-of-line blocking stalls audio during minor packet loss. \\
+        \addlinespace
+        \textbf{Post-Quantum QUIC} & UDP (1-RTT) & UDP & None (Framed) & Anti-amplification limits stall handshake; high retry penalties. \\
+        \addlinespace
+        \textbf{TurboTLS \cite{aguilar2024turbotls}} & UDP + TCP Race & TCP & None & Designed for web TTFB; routes audio over TCP, suffering delay. \\
+        \addlinespace
+        \textbf{HPQV (This Work)} & \textbf{TCP (Framed)} & \textbf{UDP (1200B DF)} & \textbf{Zero} & \textbf{Optimal: Reliable PQC setup with low-latency datagram voice.} \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\textbf{Identified Research Gap:} 
+Existing research in post-quantum networking focuses almost exclusively on web-centric request-response protocols (HTTP/3 over QUIC, TLS 1.3 over TCP), where data streams tolerate buffering. Conversely, existing real-time voice architectures rely on datagram transports that cannot accommodate multi-kilobyte post-quantum handshakes without inducing catastrophic IP fragmentation. No dedicated transport protocol exists that systematically decouples post-quantum security negotiation from datagram audio streaming while enforcing strict fragmentation invariants. This thesis directly fills that gap.

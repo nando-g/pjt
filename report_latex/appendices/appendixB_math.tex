@@ -1,0 +1,84 @@
+\chapter{MATHEMATICAL FORMULATIONS AND DERIVATIONS}
+\label{app:math}
+
+This appendix compiles the formal mathematical derivations for the network survival probabilities, acoustic quality formulations, and statistical confidence intervals utilized throughout the evaluation.
+
+\section{COMPOUND FRAGMENT LOSS PROBABILITY MODEL}
+Consider an oversized application-layer datagram $D$ of size $S$ bytes transmitted across an IP network interface with a Maximum Transmission Unit of $\text{MTU}$ bytes. Let $H_{\text{IP}} = 20\text{ bytes}$ denote the base IPv4 header length. The maximum data payload per fragment is:
+\begin{equation}
+    L_{\text{max}} = 8 \cdot \left\lfloor \frac{\text{MTU} - H_{\text{IP}}}{8} \right\rfloor
+\end{equation}
+For a standard Ethernet $\text{MTU} = 1500\text{ bytes}$:
+\begin{equation}
+    L_{\text{max}} = 8 \cdot \left\lfloor \frac{1480}{8} \right\rfloor = 1480\ \text{bytes}
+\end{equation}
+The number of physical IP fragments $k$ produced by datagram $D$ with transport header $H_{\text{UDP}} = 8\text{ bytes}$ is:
+\begin{equation}
+    k = \left\lceil \frac{S + H_{\text{UDP}}}{L_{\text{max}}} \right\rceil
+\end{equation}
+For HPQV's \texttt{HELLO} message ($S = 6445\text{ B}$), $k_1 = \lceil 6453 / 1480 \rceil = 5\text{ fragments}$. For the \texttt{ACCEPT} message ($S = 4397\text{ B}$), $k_2 = \lceil 4405 / 1480 \rceil = 3\text{ fragments}$. The complete handshake produces $K = k_1 + k_2 = 8\text{ fragments}$.
+
+Assuming packet losses occur independently with probability $p$ (Bernoulli trials), the probability that an individual fragment arrives intact is $1 - p$. Because IP reassembly requires every fragment to arrive intact, the joint probability that the complete handshake is delivered without loss is:
+\begin{equation}
+    P_{\text{survival}}(p, K) = \prod_{i=1}^K (1 - p) = (1 - p)^K = (1 - p)^8
+\end{equation}
+The probability of complete session setup failure due to fragment drop is the complement:
+\begin{equation}
+    P_{\text{failure}}(p, K) = 1 - (1 - p)^8
+\end{equation}
+
+\section{WILSON SCORE 95\% CONFIDENCE INTERVAL}
+For a finite sample of $n$ independent connection attempts yielding $x$ successes, the sample proportion is $\hat{p} = x / n$. While the conventional Wald confidence interval ($\hat{p} \pm z\sqrt{\hat{p}(1-\hat{p})/n}$) performs poorly near the boundaries ($\hat{p} \to 0$ or $\hat{p} \to 1$), the \textbf{Wilson score interval} provides robust coverage by inverting the score test for the binomial parameter $p$:
+\begin{equation}
+    \left| \frac{\hat{p} - p}{\sqrt{\frac{p(1-p)}{n}}} \right| \le z
+\end{equation}
+Solving the resulting quadratic equation for $p$ yields the lower and upper bounds $(w^-, w^+)$:
+\begin{equation}
+    w^{\pm} = \frac{1}{1 + \frac{z^2}{n}} \left( \hat{p} + \frac{z^2}{2n} \pm z \sqrt{\frac{\hat{p}(1 - \hat{p})}{n} + \frac{z^2}{4n^2}} \right)
+\end{equation}
+For a 95\% confidence level ($\alpha = 0.05$), the two-tailed critical value is $z = 1.95996$.
+
+\section{ITU-T G.107 E-MODEL COMPUTATIONAL FORMULATION}
+The E-model calculates the transmission rating factor $R$ via additive impairment decomposition:
+\begin{equation}
+    R = R_0 - I_s - I_d - I_{e,\text{eff}} + A
+\end{equation}
+where:
+\begin{itemize}
+    \item $R_0 = 94.76$: Basic signal-to-noise ratio derived from background noise.
+    \item $I_s = 0.56$: Simultaneous speech impairment factor under standard telephone bandpass.
+    \item $A = 0$: Conventional wireline / fixed broadband advantage factor.
+    \item $I_d$: Delay impairment, expressed as a piecewise function of one-way mouth-to-ear delay $d$ (in milliseconds):
+    \begin{equation}
+        I_d = 0.024 d + 0.11 (d - 177.3) \cdot \mathcal{H}(d - 177.3)
+    \end{equation}
+    where $\mathcal{H}(x)$ is the Heaviside step function ($\mathcal{H}(x) = 1$ if $x > 0$, else $0$).
+    \item $I_{e,\text{eff}}$: Effective equipment impairment factor modeling codec distortion and packet drop rate $p_{\text{loss}}$ (in percent):
+    \begin{equation}
+        I_{e,\text{eff}} = I_e + (95 - I_e) \cdot \frac{p_{\text{loss}}}{p_{\text{loss}} + B_{pl}}
+    \end{equation}
+    For the Opus wideband audio codec, standard empirical calibrations define intrinsic equipment impairment $I_e = 11$ and packet-loss robustness factor $B_{pl} = 4.3$.
+\end{itemize}
+
+The scalar rating factor $R$ maps to the estimated Mean Opinion Score (MOS) through the continuous transformation:
+\begin{equation}
+    \text{MOS} = 
+    \begin{cases}
+        1.0, & R \le 0 \\
+        1 + 0.035 R + 7 \times 10^{-6} R (R - 60) (100 - R), & 0 < R < 100 \\
+        4.5, & R \ge 100
+    \end{cases}
+\end{equation}
+
+\section{SEGMENTAL SIGNAL-TO-NOISE RATIO (SNR) FORMULATION}
+Let $s(n)$ denote the reference audio signal, defined as the undamaged decode of the received packet stream, and let $\hat{s}(n)$ denote the audio signal decoded under loss and packet concealment.
+
+The signal is partitioned into $M$ non-overlapping analysis frames of duration $T = 20\text{ ms}$ ($N = 960$ samples per frame at $f_s = 48\text{ kHz}$). For each frame $m \in \{0, \dots, M-1\}$, the frame signal power $\sigma_{s,m}^2$ and frame error noise power $\sigma_{e,m}^2$ are computed as:
+\begin{equation}
+    \sigma_{s,m}^2 = \sum_{n=0}^{N-1} s_m^2(n), \quad \sigma_{e,m}^2 = \sum_{n=0}^{N-1} \left( s_m(n) - \hat{s}_m(n) \right)^2
+\end{equation}
+The segmental Signal-to-Noise Ratio is the arithmetic mean of the per-frame decibel ratios:
+\begin{equation}
+    \text{SNR}_{\text{seg}} = \frac{1}{M} \sum_{m=0}^{M-1} \min \left( 10 \log_{10} \left( \frac{\sigma_{s,m}^2}{\sigma_{e,m}^2 + \epsilon} \right), \text{SNR}_{\text{cap}} \right)
+\end{equation}
+where $\epsilon = 10^{-12}$ prevents division by zero, and $\text{SNR}_{\text{cap}} = 99.0\text{ dB}$ provides an explicit upper bound for bit-identical reconstructions.

@@ -1,0 +1,189 @@
+\chapter{CORE PROTOTYPE SOURCE CODE LISTINGS}
+\label{app:code}
+
+This appendix provides the annotated source code listings for the foundational cryptographic, control, and packetization modules of the HPQV protocol implementation.
+
+\section{POST-QUANTUM HANDSHAKE ENGINE (\texttt{src/hpqv/handshake.py})}
+\begin{lstlisting}[language=Python]
+import oqs
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
+
+KEM_ALG, SIG_ALG = "ML-KEM-768", "ML-DSA-65"
+VERSION = 1
+
+KEM_PUB_LEN = 1184
+SIG_PUB_LEN = 1952
+
+def derive(shared_secret: bytes) -> tuple[bytes, bytes, bytes]:
+    okm = HKDF(algorithm=hashes.SHA256(), length=40, salt=None,
+               info=b"hpqv v1").derive(shared_secret)
+    return okm[:32], okm[32:36], okm[36:40]
+
+def make_identity() -> tuple[bytes, bytes]:
+    sig = oqs.Signature(SIG_ALG)
+    pub = sig.generate_keypair()
+    return pub, sig.export_secret_key()
+
+def build_hello(sig_pub: bytes, sig_secret: bytes):
+    kem = oqs.KeyEncapsulation(KEM_ALG)
+    kem_pub = kem.generate_keypair()
+    signer = oqs.Signature(SIG_ALG, secret_key=sig_secret)
+    sig = signer.sign(kem_pub + sig_pub)
+    hello = bytes([VERSION]) + kem_pub + sig_pub + sig
+    return hello, kem, kem_pub
+
+def accept_hello(hello: bytes, trusted_peer_sig_pub: bytes, my_sig_secret: bytes):
+    kem_pub = hello[1:1 + KEM_PUB_LEN]
+    sig_pub = hello[1 + KEM_PUB_LEN:1 + KEM_PUB_LEN + SIG_PUB_LEN]
+    sig = hello[1 + KEM_PUB_LEN + SIG_PUB_LEN:]
+    if sig_pub != trusted_peer_sig_pub:
+        raise ValueError("unpinned identity")
+    verifier = oqs.Signature(SIG_ALG)
+    if not verifier.verify(kem_pub + sig_pub, sig, sig_pub):
+        raise ValueError("bad signature")
+    kem = oqs.KeyEncapsulation(KEM_ALG)
+    ct, shared = kem.encap_secret(kem_pub)
+    resp_signer = oqs.Signature(SIG_ALG, secret_key=my_sig_secret)
+    resp_sig = resp_signer.sign(kem_pub + ct)
+    accept = bytes([VERSION]) + ct + resp_sig
+    key, prefix_i2r, prefix_r2i = derive(shared)
+    return accept, (key, prefix_r2i, prefix_i2r)
+
+def finish(accept: bytes, kem, kem_pub: bytes, trusted_peer_sig_pub: bytes):
+    ct = accept[1:1 + 1088]
+    resp_sig = accept[1 + 1088:]
+    verifier = oqs.Signature(SIG_ALG)
+    if not verifier.verify(kem_pub + ct, resp_sig, trusted_peer_sig_pub):
+        raise ValueError("bad responder signature")
+    shared = kem.decap_secret(ct)
+    key, prefix_i2r, prefix_r2i = derive(shared)
+    return key, prefix_i2r, prefix_r2i
+\end{lstlisting}
+
+\section{PACKET SERIALIZATION AND AEAD SEALING (\texttt{src/hpqv/packet.py})}
+\begin{lstlisting}[language=Python]
+import struct
+from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+
+MAX_DATAGRAM = 1200
+VERSION, TYPE_VOICE = 1, 1
+
+def _header(seq: int, flags: int) -> bytes:
+    return struct.pack(">BBQB", VERSION, TYPE_VOICE, seq, flags)
+
+def seal(key, nonce_prefix, seq, opus_frame, flags=0):
+    header = _header(seq, flags)
+    nonce = nonce_prefix + struct.pack(">Q", seq)
+    ct = ChaCha20Poly1305(key).encrypt(nonce, opus_frame, header)
+    dg = header + ct
+    if len(dg) > MAX_DATAGRAM:
+        raise ValueError(f"datagram {len(dg)} > {MAX_DATAGRAM}")
+    return dg
+
+def open_(key, nonce_prefix, datagram):
+    header, ct = datagram[:11], datagram[11:]
+    version, msg_type, seq, flags = struct.unpack(">BBQB", header)
+    if version != VERSION or msg_type != TYPE_VOICE:
+        raise ValueError("bad datagram header")
+    nonce = nonce_prefix + struct.pack(">Q", seq)
+    frame = ChaCha20Poly1305(key).decrypt(nonce, ct, header)
+    return seq, flags, frame
+\end{lstlisting}
+
+\section{TCP CONTROL PLANE FRAMING (\texttt{src/hpqv/control.py})}
+\begin{lstlisting}[language=Python]
+import struct
+from hpqv import handshake as h
+
+def send_record(sock, payload: bytes) -> None:
+    sock.sendall(struct.pack(">I", len(payload)) + payload)
+
+def _recvn(sock, n: int) -> bytes:
+    buf = b""
+    while len(buf) < n:
+        chunk = sock.recv(n - len(buf))
+        if not chunk:
+            raise ConnectionError("peer closed")
+        buf += chunk
+    return buf
+
+def recv_record(sock) -> bytes:
+    (length,) = struct.unpack(">I", _recvn(sock, 4))
+    return _recvn(sock, length)
+
+MSG_CALL_START, MSG_CALL_END, MSG_KEY_ROTATE = 1, 2, 3
+
+def send_control(sock, msg_type: int, payload: bytes = b"") -> None:
+    send_record(sock, bytes([msg_type]) + payload)
+
+def recv_control(sock) -> tuple:
+    rec = recv_record(sock)
+    return rec[0], rec[1:]
+
+def run_initiator(sock, sig_pub, sig_secret, peer_sig_pub):
+    hello, kem, kem_pub = h.build_hello(sig_pub, sig_secret)
+    send_record(sock, hello)
+    accept = recv_record(sock)
+    return h.finish(accept, kem, kem_pub, peer_sig_pub)
+
+def run_responder(sock, sig_pub, sig_secret, peer_sig_pub):
+    hello = recv_record(sock)
+    accept, session = h.accept_hello(hello, peer_sig_pub, sig_secret)
+    send_record(sock, accept)
+    return session
+\end{lstlisting}
+
+\section{KEY RATCHET AND ROTATION (\texttt{src/hpqv/session.py})}
+\begin{lstlisting}[language=Python]
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives import hashes
+
+def rotate(session):
+    """Ratchet session to next generation with mirrored direction prefixes."""
+    key, send_prefix, recv_prefix = session
+    okm = HKDF(algorithm=hashes.SHA256(), length=40, salt=None,
+               info=b"hpqv rotate v1").derive(key)
+    new_key = okm[:32]
+    p0, p1 = okm[32:36], okm[36:40]
+    if send_prefix < recv_prefix:
+        new_send, new_recv = p0, p1
+    else:
+        new_send, new_recv = p1, p0
+    return new_key, new_send, new_recv
+\end{lstlisting}
+
+\section{MIN-HEAP JITTER BUFFER (\texttt{src/hpqv/jitter.py})}
+\begin{lstlisting}[language=Python]
+import heapq
+
+class JitterBuffer:
+    def __init__(self, depth: int = 3):
+        self.depth = depth
+        self._heap = []
+        self._seen = set()
+        self._last = -1
+
+    def push(self, seq: int, frame: bytes) -> None:
+        if seq <= self._last or seq in self._seen:
+            return
+        self._seen.add(seq)
+        heapq.heappush(self._heap, (seq, frame))
+
+    def pop(self):
+        if len(self._heap) < self.depth:
+            return None
+        seq, frame = heapq.heappop(self._heap)
+        self._seen.discard(seq)
+        self._last = seq
+        return frame
+
+    def flush(self):
+        out = []
+        while self._heap:
+            seq, frame = heapq.heappop(self._heap)
+            self._seen.discard(seq)
+            self._last = seq
+            out.append(frame)
+        return out
+\end{lstlisting}

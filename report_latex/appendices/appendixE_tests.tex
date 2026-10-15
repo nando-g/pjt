@@ -1,0 +1,72 @@
+\chapter{AUTOMATED TEST SUITE INVENTORY}
+\label{app:tests}
+
+This appendix provides the complete catalog and behavioral verification inventory for the 53 automated test cases implemented across the HPQV verification framework.
+
+\section{TEST CASE INVENTORY}
+
+\begin{table}[htbp]
+    \centering
+    \caption{Complete Inventory of the 53-Case Automated Test Suite.}
+    \label{tab:full_test_inventory}
+    \scriptsize
+    \begin{tabularx}{\textwidth}{l l p{8.5cm}}
+        \toprule
+        \textbf{Identifier} & \textbf{Source Test File} & \textbf{Protected Invariant and Verification Scope} \\
+        \midrule
+        \texttt{TC-01} & \texttt{test\_handshake.py} & Verifies mutual key agreement: both peers derive identical 32-byte shared secrets. \\
+        \texttt{TC-02} & \texttt{test\_handshake.py} & Asserts that an unpinned or mismatched peer identity public key raises \texttt{ValueError}. \\
+        \texttt{TC-03} & \texttt{test\_handshake.py} & Security invariant: asserts that a forged or altered \texttt{ACCEPT} signature is rejected. \\
+        \texttt{TC-04} & \texttt{test\_handshake.py} & Security invariant: asserts that a bit-flipped or tampered KEM ciphertext is rejected. \\
+        \texttt{TC-05} & \texttt{test\_control.py} & Verifies length-prefixed record serialization and multi-chunk TCP socket reassembly. \\
+        \texttt{TC-06} & \texttt{test\_control.py} & Verifies full handshake state machine execution over active loopback TCP sockets. \\
+        \texttt{TC-07} & \texttt{test\_control.py} & Confirms delivery and parsing of post-handshake \texttt{CALL\_START} and \texttt{CALL\_END} messages. \\
+        \texttt{TC-08} & \texttt{test\_session.py} & Confirms lockstep HKDF ratcheting: both peers derive the identical next-generation key. \\
+        \texttt{TC-09} & \texttt{test\_session.py} & Asserts forward secrecy: verifies that the ratcheted key is distinct from the previous key. \\
+        \texttt{TC-10} & \texttt{test\_packet.py} & Verifies ChaCha20-Poly1305 AEAD sealing and unsealing round-trip integrity. \\
+        \texttt{TC-11} & \texttt{test\_packet.py} & Architectural invariant: asserts that assembling a datagram $>1200\text{ B}$ raises \texttt{ValueError}. \\
+        \texttt{TC-12} & \texttt{test\_packet.py} & Asserts rejection of voice datagrams carrying corrupted headers or mismatched version bytes. \\
+        \texttt{TC-13} & \texttt{test\_jitter.py} & Confirms that out-of-order sequence numbers are correctly sorted by the min-heap buffer. \\
+        \texttt{TC-14} & \texttt{test\_jitter.py} & Verifies duplicate packet suppression and rejection of packets older than the playout horizon. \\
+        \texttt{TC-15} & \texttt{test\_audio.py} & Validates Opus 48 kHz mono 20 ms encoding and decoding round-trip fidelity. \\
+        \texttt{TC-16} & \texttt{test\_udp.py} & Asserts correct operating system socket flags (\texttt{IP\_PMTUDISC\_DO} or \texttt{IP\_DONTFRAGMENT}). \\
+        \texttt{TC-17} & \texttt{test\_call.py} & Executes full end-to-end voice streaming call over localhost loopback sockets. \\
+        \texttt{TC-18} & \texttt{test\_call.py} & Cryptographic invariant: asserts that Caller and Listener use distinct nonce prefixes. \\
+        \texttt{TC-19} & \texttt{test\_loss\_control.py} & Verifies that dynamic loss probability adjustments take immediate effect in sender threads. \\
+        \texttt{TC-20} & \texttt{test\_loss\_control.py} & Validates thread-safe interaction between the GUI slider queue and audio pipelines. \\
+        \texttt{TC-21} & \texttt{eval/test\_mos.py} & Verifies monotonic decrease of ITU-T G.107 E-model MOS with increasing packet loss. \\
+        \texttt{TC-22} & \texttt{eval/test\_mos.py} & Verifies monotonic decrease of E-model MOS with increasing one-way propagation delay. \\
+        \texttt{TC-23} & \texttt{eval/test\_mos.py} & Confirms proper numerical clamping of MOS outputs to the valid $[1.0, 4.5]$ interval. \\
+        \texttt{TC-24} & \texttt{eval/test\_mos.py} & Validates continuity across the piecewise knee boundary of the delay impairment curve. \\
+        \texttt{TC-25} & \texttt{eval/test\_mos.py} & Validates asymptotic convergence of equipment impairment under 100\% packet drop. \\
+        \texttt{TC-26} & \texttt{eval/test\_stats.py} & Validates mathematical calculation of empirical packet drop percentages. \\
+        \texttt{TC-27} & \texttt{eval/test\_stats.py} & Verifies interarrival jitter calculation adhering to RFC 3550 exponential filtering. \\
+        \texttt{TC-28} & \texttt{eval/test\_stats.py} & Validates Time to First Byte (TTFB) timer calculation and outlier suppression. \\
+        \texttt{TC-29} & \texttt{eval/test\_stats.py} & Asserts correctness of the Wilson score 95\% confidence interval boundary evaluations. \\
+        \texttt{TC-30} & \texttt{eval/test\_capture.py} & Validates accurate identification of IP fragments in PCAP traces using TShark filters. \\
+        \texttt{TC-31} & \texttt{eval/test\_capture.py} & Verifies that clean PCAP traces without fragmentation report exactly zero fragments. \\
+        \texttt{TC-32} & \texttt{eval/test\_baselines.py} & Physical proof: verifies that the naive UDP baseline produces 8 IP fragments under MTU 1500. \\
+        \texttt{TC-33} & \texttt{eval/test\_baselines.py} & Verifies that the pure TCP voice baseline transports media cleanly without packet loss. \\
+        \texttt{TC-34} & \texttt{eval/test\_netem.py} & Validates injection of NetEm delay, jitter, and loss parameters into Linux qdiscs. \\
+        \texttt{TC-35} & \texttt{eval/test\_runner.py} & Validates end-to-end execution of evaluation runner scripts across loss sweeps. \\
+        \texttt{TC-36} & \texttt{eval/test\_runner.py} & Verifies clean teardown of network qdiscs and restoration of original interface MTUs. \\
+        \texttt{TC-37} & \texttt{eval/test\_runner.py} & Asserts that scenario runner logs conform to standard schema and emit non-empty CSVs. \\
+        \texttt{TC-38} & \texttt{eval/test\_pqc\_cost.py} & Verifies ML-KEM-768 public key (1,184 B) and ciphertext (1,088 B) memory sizes. \\
+        \texttt{TC-39} & \texttt{eval/test\_pqc\_cost.py} & Verifies ML-DSA-65 public key (1,952 B) and signature (3,309 B) memory sizes. \\
+        \texttt{TC-40} & \texttt{eval/test\_pqc\_cost.py} & Benchmarks and asserts that ML-KEM encapsulation CPU execution time remains $<2.0\text{ ms}$. \\
+        \texttt{TC-41} & \texttt{eval/test\_ns3\_smoke.py} & Validates compilation of \texttt{ns3/hpqv\_sim.cc} against native NS-3 3.41 libraries. \\
+        \texttt{TC-42} & \texttt{eval/test\_ns3\_smoke.py} & Asserts that the NS-3 simulation model produces monotonic voice loss under error rates. \\
+        \texttt{TC-43} & \texttt{eval/test\_graphs.py} & Validates programmatic generation and file emission of all performance plots in \texttt{results/}. \\
+        \texttt{TC-44} & \texttt{eval/test\_run\_*\_smoke.py} & Smoke test verifying execution of \texttt{run\_eval.py} driver in evaluation environments. \\
+        \texttt{TC-45} & \texttt{eval/test\_run\_*\_smoke.py} & Smoke test verifying execution of \texttt{run\_ns3.py} simulation driver script. \\
+        \texttt{TC-46} & \texttt{eval/test\_fec\_recovery.py} & Validates that Opus in-band FEC reconstructs lost frames via \texttt{decode\_fec=True}. \\
+        \texttt{TC-47} & \texttt{eval/test\_fec\_recovery.py} & Validates that FEC-on segmental SNR strictly outperforms FEC-off silence filling under loss. \\
+        \texttt{TC-48} & \texttt{eval/test\_fec\_recovery.py} & Asserts monotonic degradation of FEC segmental SNR with increasing packet drop rates. \\
+        \texttt{TC-49} & \texttt{eval/test\_handshake\_survival.py} & Empirical proof: asserts fragmented UDP handshake drops to $<50\%$ completion at 10\% loss. \\
+        \texttt{TC-50} & \texttt{eval/test\_handshake\_survival.py} & Physical proof: asserts HPQV hybrid handshake achieves 100\% survival at 10\% loss. \\
+        \texttt{TC-51} & \texttt{eval/test\_handshake\_survival.py} & Validates that empirical survival rates track $(1-p)^8$ theory within confidence intervals. \\
+        \texttt{TC-52} & \texttt{test\_docs\_current.py} & Data integrity: verifies that documentation tables match committed \texttt{results/*.csv} data. \\
+        \texttt{TC-53} & \texttt{test\_smoke.py} & Package integrity: verifies clean importing of all modules in \texttt{hpqv} namespace. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}

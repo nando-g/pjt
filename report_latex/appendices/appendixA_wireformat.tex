@@ -1,0 +1,102 @@
+\chapter{WIRE FORMAT SPECIFICATION AND BYTE LAYOUTS}
+\label{app:wireformat}
+
+This appendix provides the formal, byte-exact binary wire format specification for all messages transmitted across the HPQV protocol.
+
+\section{CONTROL CHANNEL RECORD LAYER (TCP)}
+All communication over the TCP control channel is encapsulated within a 4-byte big-endian length-prefixed framing record:
+
+\begin{table}[htbp]
+    \centering
+    \caption{HPQV TCP Control Channel Framing Layer.}
+    \label{tab:tcp_framing_layout}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.5cm} c >{\raggedright\arraybackslash}p{2.5cm} >{\raggedright\arraybackslash}X}
+        \toprule
+        \textbf{Field} & \textbf{Offset} & \textbf{Size} & \textbf{Description} \\
+        \midrule
+        \texttt{Length} & 0 & 4 Bytes & Unsigned 32-bit big-endian integer specifying payload byte length. \\
+        \texttt{Payload} & 4 & $L$ Bytes & Binary payload containing Handshake or Control record. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\section{CRYPTOGRAPHIC HANDSHAKE RECORDS}
+
+\subsection{Message 1: Initiator HELLO Record}
+Dispatched from Initiator to Responder over the framed TCP channel.
+\begin{table}[htbp]
+    \centering
+    \caption{Initiator HELLO Record Wire Layout (Total: 6,445 Bytes).}
+    \label{tab:hello_layout}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.5cm} c >{\raggedright\arraybackslash}p{2.5cm} >{\raggedright\arraybackslash}X}
+        \toprule
+        \textbf{Field} & \textbf{Offset} & \textbf{Size} & \textbf{Description} \\
+        \midrule
+        \texttt{Version} & 0 & 1 Byte & Protocol version identifier (\texttt{0x01}). \\
+        \texttt{kem\_pub} & 1 & 1,184 Bytes & Ephemeral ML-KEM-768 public encapsulation key. \\
+        \texttt{sig\_pub} & 1,185 & 1,952 Bytes & Initiator's long-term ML-DSA-65 identity public key. \\
+        \texttt{signature} & 3,137 & 3,309 Bytes & ML-DSA-65 signature over concatenation $\text{kem\_pub} \parallel \text{sig\_pub}$. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{Message 2: Responder ACCEPT Record}
+Dispatched from Responder to Initiator over the framed TCP channel upon identity verification.
+\begin{table}[htbp]
+    \centering
+    \caption{Responder ACCEPT Record Wire Layout (Total: 4,397 Bytes).}
+    \label{tab:accept_layout}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.5cm} c >{\raggedright\arraybackslash}p{2.5cm} >{\raggedright\arraybackslash}X}
+        \toprule
+        \textbf{Field} & \textbf{Offset} & \textbf{Size} & \textbf{Description} \\
+        \midrule
+        \texttt{Version} & 0 & 1 Byte & Protocol version identifier (\texttt{0x01}). \\
+        \texttt{kem\_ct} & 1 & 1,088 Bytes & ML-KEM-768 encapsulated ciphertext. \\
+        \texttt{resp\_sig} & 1,089 & 3,309 Bytes & ML-DSA-65 signature over transcript $\text{kem\_pub} \parallel \text{kem\_ct}$. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\section{CONTROL SIGNALING RECORDS}
+Dispatched over TCP post-handshake to manage call state:
+\begin{table}[htbp]
+    \centering
+    \caption{Post-Handshake Control Message Record Layout.}
+    \label{tab:control_record_layout}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.5cm} c >{\raggedright\arraybackslash}p{2.5cm} >{\raggedright\arraybackslash}X}
+        \toprule
+        \textbf{Field} & \textbf{Offset} & \textbf{Size} & \textbf{Description} \\
+        \midrule
+        \texttt{MsgType} & 0 & 1 Byte & Message identifier: \texttt{0x01} (\texttt{CALL\_START}), \texttt{0x02} (\texttt{CALL\_END}), \texttt{0x03} (\texttt{KEY\_ROTATE}). \\
+        \texttt{Payload} & 1 & Variable & Optional signaling parameters (e.g., remote UDP port for \texttt{CALL\_START}). \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\section{DATA CHANNEL VOICE DATAGRAM (UDP)}
+Streamed over UDP, constrained under a strict 1,200-byte cap with IP Don't-Fragment bit asserted.
+\begin{table}[htbp]
+    \centering
+    \caption{Voice Datagram Binary Layout (Authenticated Associated Data and AEAD Body).}
+    \label{tab:voice_datagram_layout}
+    \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{2.5cm} c >{\raggedright\arraybackslash}p{2.5cm} >{\raggedright\arraybackslash}X}
+        \toprule
+        \textbf{Field} & \textbf{Offset} & \textbf{Size} & \textbf{Description} \\
+        \midrule
+        \texttt{Version} & 0 & 1 Byte & Protocol version identifier (\texttt{0x01}). \\
+        \texttt{MsgType} & 1 & 1 Byte & Datagram type identifier (\texttt{0x01} for Voice). \\
+        \texttt{Sequence} & 2 & 8 Bytes & Unsigned 64-bit big-endian packet sequence counter. \\
+        \texttt{Flags} & 10 & 1 Byte & Bitmask flags (reserved for FEC/signaling extensions). \\
+        \midrule
+        \texttt{Ciphertext} & 11 & Variable & ChaCha20-Poly1305 encrypted Opus audio frame ($\approx 80-160\text{ B}$). \\
+        \texttt{Tag} & End $- 16$ & 16 Bytes & Poly1305 authentication tag authenticating Header (AAD) and Ciphertext. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\section{NONCE CONSTRUCTION AND ISOLATION}
+The 12-byte (96-bit) ChaCha20-Poly1305 nonce is synthesized as:
+\begin{equation}
+    \text{Nonce} = \text{DirectionalPrefix}\ (4\ \text{bytes}) \parallel \text{SequenceNumber}\ (8\ \text{bytes, big-endian})
+\end{equation}
+where $\text{DirectionalPrefix}$ is derived uniquely per transmission direction via HKDF-SHA256, guaranteeing non-overlapping nonce sequences throughout the session.

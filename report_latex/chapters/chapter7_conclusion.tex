@@ -1,0 +1,61 @@
+\chapter{CONCLUSION AND FUTURE WORK}
+
+\section{SUMMARY OF RESEARCH CONTRIBUTIONS}
+This thesis addressed the critical structural conflict between post-quantum cryptographic overhead and the physical constraints of datagram-based real-time voice telecommunications. As the telecommunications industry prepares for the post-quantum transition to defeat ``harvest now, decrypt later'' surveillance, adopting standardized lattice-based cryptography forces cryptographic payloads into multi-kilobyte dimensions. When deployed across traditional UDP voice transports, these oversized payloads induce catastrophic network-layer IP fragmentation, leading to middlebox filtering, buffer exhaustion, and exponential connection collapse along a $(1-p)^8$ decay curve.
+
+To overcome this bottleneck, we formulated, implemented, and empirically evaluated \textbf{HPQV} (Hybrid Post-Quantum Voice), a decoupled dual-channel transport protocol. The major research contributions of this project include:
+\begin{enumerate}
+    \item \textbf{Decoupled Dual-Channel Architecture:} By routing the 10,842-byte ML-KEM-768 and ML-DSA-65 handshake, signaling records, and dynamic key rotation ratchets over a reliable, length-prefixed TCP control stream, HPQV shields the datagram path from oversized cryptographic payloads. Real-time Opus voice frames are simultaneously streamed across an independent UDP data channel capped at 1,200 bytes with the IP Don't-Fragment bit asserted.
+    \item \textbf{Secure Mutual Authentication and Nonce Isolation:} Implementing Architecture Decision Record 0002 (ADR-0002), HPQV eliminates Man-in-the-Middle vulnerabilities by binding the responder's ML-DSA-65 digital signature across the exact handshake transcript ($\text{pk}_{\text{KEM}} \parallel \text{ct}_{\text{KEM}}$). Furthermore, the protocol derives mathematically disjoint 4-byte directional nonce prefixes via HKDF-SHA256, eliminating catastrophic symmetric nonce reuse in full-duplex ChaCha20-Poly1305 AEAD streams.
+    \item \textbf{Empirical Demonstration of Fragmentation-Free Transport:} Through physical packet sniffing under Linux \texttt{tc netem} kernel impairment (Track 2), HPQV proved that it produces \textbf{exactly zero IP fragments} across all loss rates (0\% to 30\%), whereas naive UDP generates 4 to 5 fragments per exchange.
+    \item \textbf{Empirical Proof of Handshake Survivability:} In an exhaustive 100-attempt evaluation under 20\% packet loss, naive UDP experienced catastrophic connection failure, establishing successfully in only \textbf{19 out of 100 calls} (matching the theoretical $(1-p)^8$ prediction). In sharp contrast, HPQV maintained a \textbf{99\% connection completion rate}, trading minor TCP retransmission latency for absolute session survivability.
+    \item \textbf{Acoustic Forward Error Correction Efficacy:} Using a clean reference decoding methodology that isolates packet loss from codec quantization noise, we demonstrated that Opus in-band Forward Error Correction (LBRR) delivers an acoustic quality advantage of \textbf{24 dB to 30 dB} in segmental SNR over zero-frame silence concealment.
+    \item \textbf{Open-Source Reference Prototype and Desktop GUI:} We developed a complete, portable userspace software implementation in Python 3.11 with low-level C bindings to \texttt{liboqs} and \texttt{libopus}, validated by 53 automated tests and accompanied by an interactive desktop graphical user interface featuring live in-call packet loss injection.
+\end{enumerate}
+
+\section{VERIFICATION OF RESEARCH OBJECTIVES}
+Table \ref{tab:objective_verification} assesses the outcomes of this thesis against the original research objectives established in Chapter 1.
+
+\begin{table}[htbp]
+    \centering
+    \caption{Systematic Verification of Project Deliverables against Objectives.}
+    \label{tab:objective_verification}
+    \small
+    \begin{tabularx}{\textwidth}{p{3.2cm} p{2.2cm} X}
+        \toprule
+        \textbf{Initial Objective} & \textbf{Status} & \textbf{Empirical and Technical Verification} \\
+        \midrule
+        1. Protocol Design & \textbf{Completed} & Formulated decoupled TCP control and UDP voice framing specifications. \\
+        \addlinespace
+        2. Mutual PQC Auth & \textbf{Completed} & Integrated ML-KEM-768 and ML-DSA-65 with transcript binding (ADR-0002). \\
+        \addlinespace
+        3. Nonce Isolation & \textbf{Completed} & HKDF derives distinct $N_{I \to R}$ and $N_{R \to I}$ prefixes; tested against collisions. \\
+        \addlinespace
+        4. 1200B DF Invariant & \textbf{Completed} & Application assertions and kernel socket flags enforce zero IP fragmentation. \\
+        \addlinespace
+        5. Audio Resilience & \textbf{Completed} & Activated Opus LBRR (CTL 4012) and built heap-based jitter buffer ($D=3$). \\
+        \addlinespace
+        6. Userspace Prototype & \textbf{Completed} & Developed modular Python package, Tkinter GUI, and 53 automated tests. \\
+        \addlinespace
+        7. Multi-Tier Evaluation & \textbf{Completed} & Benchmarked via Linux NetEm physical sweeps and secondary NS-3 simulation. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\section{FUTURE WORK AND RESEARCH EXTENSIONS}
+While the HPQV protocol successfully achieves its primary design goals, several promising avenues for future research and engineering remain:
+
+\subsection{Reed-Solomon Multi-Packet Block FEC}
+As identified in Section 6.4, Opus in-band Forward Error Correction relies on single-frame lookahead, which cannot reconstruct lost frames when network drops occur in consecutive bursts. Future iterations will integrate a systematic Reed-Solomon $(N, K)$ block erasure code across the UDP datagram stream. By generating parity packets over sliding blocks of audio frames, the receiver can reconstruct multiple contiguous lost packets, significantly improving speech intelligibility under high-loss wireless environments.
+
+\subsection{Adaptive Jitter Buffering}
+The current prototype deploys a fixed-depth min-heap jitter buffer ($D=3$ frames, or 60 ms). While robust for local networks, fixed buffering is suboptimal for dynamic wide-area paths. Future work will implement an adaptive jitter buffer that continuously estimates interarrival delay variance and dynamically modulates buffer depth, minimizing playback latency on stable links while expanding buffer capacity during jitter surges.
+
+\subsection{Dynamic Path MTU Discovery (PMTUD)}
+HPQV enforces a conservative static datagram limit of 1,200 bytes. To maximize transport efficiency across heterogeneous networks (such as Ethernet jumbo frames or constrained VPN tunnels), the data plane can be extended with Packetization Layer Path MTU Discovery (PLPMTUD, RFC 8899). This will allow endpoints to probe and utilize the true path MTU dynamically without risking fragmentation.
+
+\subsection{Wide-Area Deployment and Cellular Trials}
+While our physical laboratory evaluations under Linux \texttt{tc netem} provide controlled, rigorous baseline measurements, future research will deploy HPQV across public wide-area Internet paths, including transcontinental fiber links, 4G/5G cellular mobile networks, and low-Earth-orbit satellite links (e.g., Starlink), evaluating empirical performance against commercial carrier-grade NATs and stateful middleboxes.
+
+\subsection{Machine-Checked Formal Cryptographic Verification}
+To establish mathematical guarantees beyond empirical testing, future work will model the HPQV mutual authentication handshake, transcript binding, and session key ratcheting within automated formal verification frameworks such as CryptoVerif \cite{blanchet2024postquantum} or ProVerif, proving symbolic and computational security against active adversaries in the standard model.
